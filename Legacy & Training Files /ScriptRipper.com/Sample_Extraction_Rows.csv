@@ -1,0 +1,11 @@
+nugget_type,title,field_name,field_value,timestamp_start,timestamp_end
+step_by_step_processes,3-Email Welcome Sequence,step,Hook email – Greet and offer lead magnet.,00:01:15,00:01:35
+step_by_step_processes,3-Email Welcome Sequence,step,Story email – Share origin story that aligns with subscriber pain point.,00:01:35,00:02:45
+step_by_step_processes,3-Email Welcome Sequence,step,Offer email – Soft pitch with limited‑time bonus.,00:02:45,00:03:42
+product_review,ConvertKit,pros,Tag‑based system; clean UI; generous free tier,00:09:10,00:10:05
+product_review,ConvertKit,cons,Limited native A/B testing; pricier at 10k+ subs,00:10:05,00:10:45
+product_review,ConvertKit,verdict,Solid for creators <25k list,00:10:45,00:11:10
+product_review,ConvertKit,best_for,Solo course creators and niche bloggers,00:11:10,00:11:27
+tool_tip,Liquid first-name fallback,tip,Use liquid tags for first‑name fallback,00:05:08,
+quote,Automation quote,quote,Automation isn’t about replacing you—it’s about letting you show up at scale.,00:12:44,
+call_to_action,Draft welcome flow,challenge,Draft your 3‑email welcome flow by tonight and schedule it.,00:14:02,

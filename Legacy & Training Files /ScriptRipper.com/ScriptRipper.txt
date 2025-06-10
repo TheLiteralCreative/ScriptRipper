@@ -1,0 +1,13 @@
+How it works:
+Save your raw transcript as a .txt file (example: your_transcript.txt).
+Run this Python script.
+Output: It generates a clean expanded_outline.md file automatically.
+Notes:
+Super simple on purpose: you can easily plug in smarter formatting later (like sections, timestamps, bullet points).
+Right now, it auto-adds a header and converts each line into a bullet point.
+It’s modular — meaning when you're ready, we can expand it (like parsing timestamps, making recipe tables, etc).
+Fast Start Guide:
+If you have Python installed:
+
+python transcript_to_markdown.py
+(make sure you put your .txt transcript in the same folder or update the file path inside the script!)

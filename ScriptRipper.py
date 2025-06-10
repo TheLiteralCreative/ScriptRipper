@@ -1,121 +1,133 @@
 import google.generativeai as genai
 import os
-import argparse
-import re
-from dotenv import load_dotenv # <-- ADDED THIS LINE
+import shutil  # For moving files
+import pathlib # For modern path and directory handling
+from dotenv import load_dotenv
 
 # --- 1. CONFIGURATION ---
 
-load_dotenv() # <-- ADDED THIS LINE to load variables from .env
+load_dotenv()
 
-# The rest of the script is the same! It will now find the key loaded by dotenv.
 try:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 except KeyError:
-    print("FATAL: GOOGLE_API_KEY not found.")
-    print("Please ensure you have a .env file with GOOGLE_API_KEY='YOUR_KEY' in it.")
+    print("FATAL: GOOGLE_API_KEY not found. Please ensure you have a .env file.")
     exit()
 
+# --- FOLDER AND PATH CONFIGURATION ---
+# Defines all the key directories the script will use.
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+SCRIPTS_DIR = BASE_DIR / "Scripts"
+RIPPED_DIR = BASE_DIR / "Ripped"
 
-# This is your Master Prompt. You can edit this to refine the bot's behavior.
+# --- PROMPT PROFILES CONFIGURATION ---
+# This dictionary maps folder names to their corresponding prompt sets.
+# It makes it easy to add new profiles in the future!
+PROMPT_PROFILES = {
+    "meetings": [
+        {
+            "task_name": "Meeting Summary & Action Items",
+            "prompt": "Generate a comprehensive summary of the meeting, focusing on dialogue and agreements. Extract all action items into a Markdown table."
+        }
+        # ... Add other meeting-specific prompts here
+    ],
+    "presentations": [
+        {
+            "task_name": "Presentation Outline & Key Quotes",
+            "prompt": "Create a hierarchical outline of the main talking points from the presentation. Extract the most impactful quotes."
+        }
+        # ... Add other presentation-specific prompts here
+    ]
+}
+
+# --- MASTER PROMPT (unchanged) ---
 MASTER_PROMPT = """
+# Your full master prompt with formatting rules goes here...
 **## INSTRUCTION SET: TRANSCRIPT ANALYSIS PROTOCOL ##**
-
-**1. My Role and Goal:**
-You are a Professional Meeting Analyst. Your sole purpose is to act as a data extraction engine for the meeting transcript I provide. Your highest and only priority is 100% accuracy and completeness based on the provided text.
-
-**2. Core Directives (Non-negotiable):**
-* NEVER Summarize: Do not shorten, paraphrase, or summarize.
-* NEVER Invent Information: If the information requested is not present, you must explicitly state: "This information was not found in the transcript."
-* PRIORITIZE VERBATIM EXTRACTION: Use the exact wording from the transcript whenever possible.
-* REFERENCE THE ENTIRE DOCUMENT: For every single request, re-analyze the entire transcript.
-
-**3. The Process:**
-I will provide this full set of instructions and the transcript. Acknowledge this by responding ONLY with: "Protocol acknowledged. The full transcript has been loaded. I am ready." Then, await my specific data extraction tasks.
+...
 """
-
-# This is your list of analysis tasks.
-# You can add, remove, or edit these tasks as needed.
-ANALYSIS_PROMPTS = [
-    {
-        "task_name": "Action Items",
-        "prompt": "Identify all action items. Format the output as a Markdown table with three columns: 'Action Item', 'Assigned To', and 'Mentioned Timestamp (if available)'."
-    },
-    {
-        "task_name": "Key Decisions",
-        "prompt": "List all key decisions made during the meeting. Precede each decision with the name of the person who stated the final decision. Use a numbered list."
-    },
-    {
-        "task_name": "Project Titan Mentions",
-        "prompt": "Extract all mentions of 'Project Titan'. Provide them as direct quotes in a bulleted list, with the speaker's name before each quote."
-    }
-]
-
 
 # --- 2. SCRIPT LOGIC ---
 
-def create_filename_slug(text):
-    """Creates a URL-friendly slug from a string."""
-    text = text.lower()
-    text = re.sub(r'[\s_]+', '-', text)  # Replace spaces and underscores with hyphens
-    text = re.sub(r'[^\w\s-]', '', text) # Remove all non-word chars except hyphens
-    return text
-
-def analyze_transcript(transcript_filepath):
+def analyze_transcript(transcript_path: pathlib.Path, selected_prompts: list):
     """
-    Analyzes a given transcript file using the Gemini API, saving each analysis
-    to a separate output file.
+    Analyzes a single transcript file, generates reports, and returns True on success.
+    The transcript_path is a full Path object now.
     """
-    print(f"Loading transcript from: {transcript_filepath}")
+    print("-" * 50)
+    print(f"Processing transcript: {transcript_path.name}")
+    
     try:
-        with open(transcript_filepath, 'r', encoding='utf-8') as f:
+        with open(transcript_path, 'r', encoding='utf-8') as f:
             transcript_content = f.read()
-    except FileNotFoundError:
-        print(f"FATAL: Transcript file not found at '{transcript_filepath}'")
-        return
 
-    # Prepare the initial message for the model
-    initial_message = MASTER_PROMPT + "\n\n## MEETING TRANSCRIPT ##\n\n" + transcript_content
+        initial_message = MASTER_PROMPT + "\n\n## MEETING TRANSCRIPT ##\n\n" + transcript_content
+        model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        chat = model.start_chat()
 
-    # Initialize the model and start a chat session
-    print("Initializing Gemini 1.5 Pro model...")
-    model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    chat = model.start_chat()
+        print("Sending transcript to Gemini...")
+        response = chat.send_message(initial_message)
+        print(f"Model Acknowledged: {response.text.strip()}")
 
-    # Send the initial instructions and transcript
-    print("Sending instructions and transcript to the model...")
-    response = chat.send_message(initial_message)
-    print(f"Model Acknowledged: {response.text}\n" + "="*30)
+        base_filename = transcript_path.stem  # Gets filename without extension
 
-    # Prepare for output files
-    base_filename = os.path.splitext(os.path.basename(transcript_filepath))[0]
-
-    # Loop through the analysis prompts sequentially
-    for i, task in enumerate(ANALYSIS_PROMPTS):
-        task_name = task["task_name"]
-        prompt = task["prompt"]
-        print(f"\nRequesting Analysis Task {i+1}: '{task_name}'...")
+        for i, task in enumerate(selected_prompts):
+            task_name = task["task_name"]
+            prompt = task["prompt"]
+            print(f"\nRequesting Analysis Task {i+1}: '{task_name}'...")
+            
+            response = chat.send_message(prompt)
+            
+            slug = task_name.lower().replace(' ', '-').replace('&', 'and')
+            output_filename = f"{base_filename}_output_{i+1}_{slug}.md"
+            output_path = BASE_DIR / output_filename
+            
+            print(f"Saving analysis to '{output_path.name}'...")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(response.text)
         
-        response = chat.send_message(prompt)
-        
-        # Save the output to a file
-        slug = create_filename_slug(task_name)
-        output_filename = f"{base_filename}_output_{i+1}_{slug}.md"
-        
-        print(f"Saving analysis to '{output_filename}'...")
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            f.write(response.text)
-        
-    print("\n" + "="*30)
-    print("Analysis complete. All output files have been saved.")
+        print("\nAnalysis successful.")
+        return True # Indicate success
 
+    except Exception as e:
+        print(f"!!-- An error occurred while processing {transcript_path.name}: {e} --!!")
+        return False # Indicate failure
 
-# --- 3. COMMAND-LINE INTERFACE ---
+# --- 3. MAIN EXECUTION BLOCK ---
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze a meeting transcript using the Gemini API.")
-    parser.add_argument("filepath", help="The full path to the transcript file.")
+    print("Starting ScriptRipper...")
+    print(f"Scanning for transcripts in: {SCRIPTS_DIR}")
     
-    args = parser.parse_args()
-    
-    analyze_transcript(args.filepath)
+    files_processed = 0
+
+    # The main loop that drives the new workflow
+    for profile_name, prompt_set in PROMPT_PROFILES.items():
+        input_folder = SCRIPTS_DIR / profile_name
+        
+        if not input_folder.is_dir():
+            print(f"Warning: Folder for profile '{profile_name}' not found at '{input_folder}'. Skipping.")
+            continue
+
+        print(f"\n--- Checking folder for '{profile_name}' profile ---")
+        
+        # Get a list of all files in the directory
+        files_to_process = [f for f in input_folder.iterdir() if f.is_file()]
+
+        if not files_to_process:
+            print("No new transcripts found.")
+            continue
+
+        for transcript_file_path in files_to_process:
+            # Process the file
+            success = analyze_transcript(transcript_file_path, prompt_set)
+            
+            # If successful, move the original file to the 'Ripped' folder
+            if success:
+                destination_path = RIPPED_DIR / transcript_file_path.name
+                print(f"Moving processed transcript to '{destination_path}'...")
+                shutil.move(transcript_file_path, destination_path)
+                files_processed += 1
+
+    print("-" * 50)
+    print(f"ScriptRipper run complete. Total files processed: {files_processed}.")
