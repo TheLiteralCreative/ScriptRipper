@@ -1,0 +1,50 @@
+[
+    {
+        "task_name": "One-Paragraph Summary",
+        "prompt": "**1. Role & Goal:** Act as an executive assistant creating a concise summary for a busy stakeholder.\n\n**2. Core Instruction:** Generate a single, dense paragraph summarizing the meeting's purpose, the core problems discussed, the key decisions made, and the overall outcome.\n\n**3. Formatting Constraints:** The output must be a single paragraph. Adhere to all master formatting rules for the overall document structure (Title, Meta Line, etc.).\n\n**4. Negative Constraints:** Do not use bullet points in the summary. Do not go into excessive detail on any single topic."
+    },
+    {
+        "task_name": "Overview-Summary",
+        "prompt": "**1. Role & Goal:** Act as an analyst preparing a 1-2 page executive briefing document.\n\n**2. Core Instruction:** Generate a comprehensive overview summary of the entire meeting. Your summary should cover the initial purpose/agenda, the core problems and solutions discussed, major disagreements or debates, and the final outcomes including key decisions and action items.\n\n**3. Formatting Constraints:** The output should be well-written prose, organized into logical paragraphs. It should read like a formal summary report.\n\n**4. Negative Constraints:** Do not simply list bullet points. Create a flowing narrative of the meeting's highlights."
+    },
+    {
+        "task_name": "Participants & Roles",
+        "prompt": "**1. Role & Goal:** Act as a meeting administrator identifying all participants.\n\n**2. Core Instruction:** List all individuals who spoke during the meeting. If their role (e.g., Project Manager, Lead Engineer, Client) is mentioned, include it.\n\n**3. Formatting Constraints:** Use a bulleted list. Format as: '- **[Name]** ([Role, if known])'.\n\n**4. Negative Constraints:** Do not infer roles that are not explicitly stated."
+    },
+    {
+        "task_name": "Deep-Outline",
+        "prompt": "**1. Role & Goal:** Act as a technical writer tasked with structuring a complex conversation into a logical, navigable outline.\n\n**2. Core Instruction:** Analyze the entire transcript to identify its hierarchical structure. Create a detailed outline by organizing the conversation into main topics, sub-topics, and specific discussion points.\n\n**3. Formatting Constraints:** Use nested bullet points (e.g., '-', '  -', '    -') to represent the hierarchy. Under each point, include the relevant details from the conversation.\n\n**4. Negative Constraints:** This task is about re-organization, not summarization. Preserve the full detail and wording of the original content within the outline structure."
+    },
+    {
+        "task_name": "Key Decisions Log",
+        "prompt": "**1. Role & Goal:** Act as a record-keeper for project governance.\n\n**2. Core Instruction:** Extract all final decisions that were explicitly agreed upon by the participants.\n\n**3. Formatting Constraints:** Present the decisions as a numbered list. Each list item should state the decision clearly and mention who made the final call or who agreed.\n\n**4. Negative Constraints:** Do not include options that were discussed but not chosen. Do not include decisions that were pending further information."
+    },
+    {
+        "task_name": "Action Items Table",
+        "prompt": "**1. Role & Goal:** Act as a project manager tracking all follow-up tasks.\n\n**2. Core Instruction:** Identify every explicit action item, task, or follow-up mentioned in the transcript.\n\n**3. Formatting Constraints:** You MUST format the output as a Markdown table. The table must have three columns: 'Action Item', 'Assigned To', and 'Due Date (if mentioned)'.\n\n**4. Negative Constraints:** Do not invent due dates if they are not explicitly stated. Do not include vague suggestions as action items; only include clear assignments."
+    },
+    {
+        "task_name": "Client-Expectations",
+        "prompt": "**1. Role & Goal:** Act as a client relationship manager and behavioral analyst.\n\n**2. Core Instruction:** Generate a 'Client Expectations Report' that captures both explicit and implicit needs expressed by the client in the meeting. The report must have three distinct sections.\n\n**3. Formatting Constraints:** Use a Level 3 heading (###) for each section:\n- ### Explicit Expectations (To-Dos): List all concrete tasks, deliverables, and deadlines the client has requested or agreed to.\n- ### Implicit Expectations (Relational): Describe the broader, long-term, or behavioral expectations hinted at by the client (e.g., desires for more communication, specific working styles, partnership goals).\n- ### Client's Perceived Emotional State: Assess the client's general feeling (e.g., Confident, Anxious, Frustrated, Encouraged) based on their language and tone.\n\n**4. Negative Constraints:** For the 'Implicit' and 'Emotional State' sections, you MUST justify every assessment with a direct quote or specific example from the transcript."
+    },
+    {
+        "task_name": "Disagreements & Unresolved Issues",
+        "prompt": "**1. Role & Goal:** Act as a risk analyst identifying points of friction.\n\n**2. Core Instruction:** Identify all topics where there was clear disagreement between participants or questions that were left unanswered.\n\n**3. Formatting Constraints:** Use a bulleted list. For each item, summarize the issue and name the key people involved (e.g., '- Disagreement on budget allocation between Jane and Bob.').\n\n**4. Negative Constraints:** Do not include minor differences of opinion; only capture significant conflicts or unresolved blockers."
+    },
+    {
+        "task_name": "Key-Insights",
+        "prompt": "**1. Role & Goal:** Act as a communications expert analyzing the subtext of the conversation.\n\n**2. Core Instruction:** Analyze the interpersonal dynamics of the meeting. Do not focus on the business tasks themselves, but on *how* the participants communicated. Generate insights on personality dynamics, communication strategies, and unspoken subtext.\n\n**3. Formatting Constraints:** Present your findings as a bulleted list of key insights. Each insight should be a complete thought.\n\n**4. Negative Constraints:** This is an inferential task. For every insight, provide a brief justification based on the tone, phrasing, or interaction patterns observed in the text (e.g., '- Insight: Jane uses data to persuade, while Bob appeals to shared goals. Evidence: Jane repeatedly cited the quarterly report, whereas Bob often started sentences with `As a team, we need to...`')."
+    },
+    {
+        "task_name": "Important Quotes",
+        "prompt": "**1. Role & Goal:** Act as a journalist capturing the most impactful statements.\n\n**2. Core Instruction:** Identify 3-5 of the most significant, insightful, or impactful quotes from the transcript that capture the essence of the conversation.\n\n**3. Formatting Constraints:** Follow the master prompt rule for quotes: bold the timestamp and then present the verbatim quote text. Include the speaker's name for each quote.\n\n**4. Negative Constraints:** Do not include conversational filler. Only select quotes that stand on their own as meaningful."
+    },
+    {
+        "task_name": "Next-Steps_and_Project-Update",
+        "prompt": "**1. Role & Goal:** Act as a forward-planning project coordinator creating a comprehensive status report and action plan.\n\n**2. Core Instruction:** Generate a 'Meeting Snapshot & Action Plan' document with three distinct sections based on the content of this single meeting.\n\n**3. Formatting Constraints:** Use a Level 3 heading (###) for each section:\n- ### Project Status Update: Create a bulleted list of all progress updates, new challenges, or blockers reported during the meeting. Also list any specific KPIs or metrics that were mentioned.\n- ### Immediate Next Steps (Punch List): Create a Markdown table of all action items from this meeting with columns for 'Task', 'Owner', and 'Due Date'.\n- ### Talking Points for Next Meeting: Based on unresolved issues or new plans, generate a predictive, bulleted list of topics that should be on the agenda for the next meeting.\n\n**4. Negative Constraints:** This report is a snapshot based only on this transcript. Do not invent past history. The 'Talking Points' section should be forward-looking and predictive."
+    },
+    {
+        "task_name": "Full-Record-Markdown",
+        "prompt": "**1. Role & Goal:** Act as a meticulous archivist. Your sole purpose is to convert the raw transcript text into a cleanly formatted, readable Markdown document.\n\n**2. Core Instruction:** Apply all the rules from the master prompt (Title, Meta Line, Headings, etc.) to the full transcript text. The goal is to create a clean, readable, and archivable record of the entire conversation.\n\n**3. Formatting Constraints:** Follow all master formatting rules precisely.\n\n**4. Negative Constraints:** You MUST NOT summarize, change, omit, or interpret any part of the spoken text. This is a 1-to-1 transcription into a well-structured Markdown format."
+    }
+]

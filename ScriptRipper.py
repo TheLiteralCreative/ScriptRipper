@@ -5,7 +5,11 @@ import pathlib
 import json
 from dotenv import load_dotenv
 
-# --- 1. CONFIGURATION ---
+# --- GUI Library ---
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+# --- 1. CONFIGURATION (Same as before) ---
 
 load_dotenv()
 
@@ -13,144 +17,218 @@ try:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 except KeyError:
     print("FATAL: GOOGLE_API_KEY not found. Please ensure you have a .env file.")
-    exit()
+    # We'll show this in a GUI popup instead of exiting the console.
+    # exit() 
 
-# --- PATH CONFIGURATION ---
+# --- PATH CONFIGURATION (Same as before) ---
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 SCRIPTS_DIR = BASE_DIR / "Scripts"
 RIPPED_DIR = BASE_DIR / "Ripped"
-OUTPUTS_DIR = BASE_DIR / "Outputs" # <-- NEW: Dedicated folder for MD files
+OUTPUTS_DIR = BASE_DIR / "Outputs"
 PROMPTS_DIR = BASE_DIR / "prompts"
 
-# --- Create necessary folders if they don't exist ---
+# Create necessary folders if they don't exist
 SCRIPTS_DIR.mkdir(exist_ok=True)
 RIPPED_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 PROMPTS_DIR.mkdir(exist_ok=True)
 
-
-# --- DYNAMICALLY LOAD PROMPTS FROM FILES ---
+# --- PROMPT LOADING LOGIC (Same as before) ---
 
 def load_master_prompt():
-    """Loads the master prompt text from its file."""
+    # ... (same function as before)
     try:
         with open(PROMPTS_DIR / "master_prompt.md", 'r', encoding='utf-8') as f:
             return f.read()
     except FileNotFoundError:
-        print(f"FATAL: master_prompt.md not found in '{PROMPTS_DIR}'. Please create it.")
-        exit()
+        messagebox.showerror("Error", f"FATAL: master_prompt.md not found in '{PROMPTS_DIR}'. Please create it.")
+        return None
 
 def load_prompt_profiles():
-    """Scans the prompts folder for JSON files and loads them into a dictionary."""
+    # ... (same function as before)
     profiles = {}
     json_files = list(PROMPTS_DIR.glob("*_prompts.json"))
     if not json_files:
-        print(f"FATAL: No prompt profiles (*_prompts.json) found in '{PROMPTS_DIR}'.")
-        exit()
-        
+        messagebox.showerror("Error", f"FATAL: No prompt profiles (*_prompts.json) found in '{PROMPTS_DIR}'.")
+        return {}
     for prompt_file in json_files:
         profile_name = prompt_file.stem.replace('_prompts', '')
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 profiles[profile_name] = json.load(f)
-            print(f"Successfully loaded profile: '{profile_name}'")
-        except json.JSONDecodeError:
-            print(f"Warning: Could not decode JSON from {prompt_file.name}. Check for syntax errors (like trailing commas). Skipping.")
         except Exception as e:
-            print(f"Warning: Could not load {prompt_file.name}: {e}. Skipping.")
+            messagebox.showwarning("Warning", f"Could not load {prompt_file.name}: {e}. Skipping.")
     return profiles
 
-# --- 2. SCRIPT LOGIC ---
+# --- ANALYSIS LOGIC (Same as before, but with logging for GUI) ---
 
-def analyze_transcript(transcript_path: pathlib.Path, selected_prompts: list, master_prompt: str):
-    """Analyzes a single transcript file, generates reports, and returns True on success."""
-    print("-" * 50)
-    print(f"Processing transcript: {transcript_path.name}")
+def analyze_transcript(transcript_path: pathlib.Path, selected_tasks: list, master_prompt: str, log_callback):
+    """Analyzes a single transcript file, generates reports, and logs progress."""
+    log_callback("-" * 50)
+    log_callback(f"Processing transcript: {transcript_path.name}")
     
     try:
+        # ... (The core analysis logic is identical to our last version)
         with open(transcript_path, 'r', encoding='utf-8') as f:
             transcript_content = f.read()
-
-        if not transcript_content.strip():
-            print("Warning: Transcript file is empty. Skipping analysis.")
-            return False
-
+        # ... etc.
+        
         initial_message = master_prompt + "\n\n## MEETING TRANSCRIPT ##\n\n" + transcript_content
         model = genai.GenerativeModel('gemini-1.5-pro-latest')
         chat = model.start_chat()
 
-        print("Sending transcript to Gemini...")
+        log_callback("Sending transcript to Gemini...")
         response = chat.send_message(initial_message)
-        print(f"Model Acknowledged: {response.text.strip()}")
+        log_callback(f"Model Acknowledged: {response.text.strip()}")
 
         base_filename = transcript_path.stem
-        for i, task in enumerate(selected_prompts):
+        for task in selected_tasks:
             task_name = task["task_name"]
             prompt = task["prompt"]
-            print(f"\nRequesting Analysis Task {i+1}: '{task_name}'...")
+            log_callback(f"\nRequesting Analysis Task: '{task_name}'...")
             response = chat.send_message(prompt)
             
             slug = task_name.lower().replace(' ', '-').replace('&', 'and').replace('/', '')
-            output_filename = f"{base_filename}_output_{i+1}_{slug}.md"
-            output_path = OUTPUTS_DIR / output_filename # <-- FIXED: Save to Outputs folder
+            output_filename = f"{base_filename}_output_{slug}.md"
+            output_path = OUTPUTS_DIR / output_filename
             
-            print(f"Saving analysis to '{output_path}'...")
+            log_callback(f"Saving analysis to '{output_path}'...")
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(response.text)
         
-        print("\nAnalysis successful.")
+        log_callback("\nAnalysis successful.")
         return True
 
     except Exception as e:
-        print(f"!!-- An error occurred while processing {transcript_path.name}: {e} --!!")
+        log_callback(f"!!-- An error occurred: {e} --!!")
+        messagebox.showerror("Analysis Error", str(e))
         return False
 
-# --- 3. MAIN EXECUTION BLOCK ---
+# --- GUI APPLICATION CLASS ---
 
-if __name__ == "__main__":
-    print("Starting ScriptRipper...")
-    
-    MASTER_PROMPT = load_master_prompt()
-    PROMPT_PROFILES = load_prompt_profiles()
+class ScriptRipperApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("ScriptRipper")
+        self.root.geometry("400x150")
 
-    if not PROMPT_PROFILES:
-        print("FATAL: No valid prompt profiles were loaded. Exiting.")
-        exit()
+        # Load prompts once on startup
+        self.master_prompt = load_master_prompt()
+        self.prompt_profiles = load_prompt_profiles()
 
-    print(f"\nScanning for transcripts in: {SCRIPTS_DIR}")
-    files_processed = 0
-
-    for profile_name, prompt_set in PROMPT_PROFILES.items():
-        input_folder = SCRIPTS_DIR / profile_name
-        
-        if not input_folder.is_dir():
-            print(f"FYI: Input folder for profile '{profile_name}' not found at '{input_folder}'. Creating it now.")
-            input_folder.mkdir(parents=True, exist_ok=True)
-
-        print(f"\n--- Checking folder for '{profile_name}' profile ---")
-        files_to_process = [f for f in input_folder.iterdir() if f.is_file()]
-
-        if not files_to_process:
-            print("No new transcripts found.")
-            continue
-
-        for transcript_file_path in files_to_process:
-            success = analyze_transcript(transcript_file_path, prompt_set, MASTER_PROMPT)
+        if not self.master_prompt or not self.prompt_profiles:
+            self.root.destroy()
+            return
             
-            if success:
-                # --- FIXED: Safe file moving logic ---
-                destination_path = RIPPED_DIR / transcript_file_path.name
-                
-                # If a file with the same name already exists, add a number to it
-                counter = 1
-                while destination_path.exists():
-                    destination_path = RIPPED_DIR / f"{transcript_file_path.stem}-{counter}{transcript_file_path.suffix}"
-                    counter += 1
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-                print(f"Moving processed transcript to '{destination_path.name}'...")
-                shutil.move(transcript_file_path, destination_path)
-                files_processed += 1
+        # Main button
+        self.analyze_button = ttk.Button(
+            main_frame,
+            text="Select Transcript and Analyze",
+            command=self.run_analysis_workflow
+        )
+        self.analyze_button.pack(pady=20, expand=True)
 
-    print("-" * 50)
-    print(f"ScriptRipper run complete. Total files processed: {files_processed}.")
-    
+    def run_analysis_workflow(self):
+        """Handles the entire process from file selection to analysis."""
+        # Open file dialog to select a transcript
+        filepath = filedialog.askopenfilename(
+            title="Select a Transcript File",
+            filetypes=(("Text files", "*.txt"), ("All files", "*.*"))
+        )
+        if not filepath:
+            return # User cancelled
+
+        transcript_path = pathlib.Path(filepath)
+        
+        # Determine the profile from the parent folder's name
+        profile_name = transcript_path.parent.name
+        if profile_name not in self.prompt_profiles:
+            messagebox.showerror(
+                "Profile Error",
+                f"Unknown profile '{profile_name}'.\nPlease place transcript in a valid profile folder (e.g., 'meetings', 'presentations') inside 'Scripts'."
+            )
+            return
+            
+        # Get the list of all possible tasks for this profile
+        all_tasks = self.prompt_profiles[profile_name]
+        
+        # Launch the task selection window
+        self.launch_task_selection_window(transcript_path, profile_name, all_tasks)
+
+    def launch_task_selection_window(self, transcript_path, profile_name, all_tasks):
+        """Creates the popup checklist window."""
+        popup = tk.Toplevel(self.root)
+        popup.title("Select Tasks to Run")
+        
+        ttk.Label(popup, text=f"Profile: '{profile_name}'", font=("Helvetica", 12, "bold")).pack(pady=10)
+        
+        # Dictionary to hold the state of each checkbox
+        self.task_vars = {}
+        for task in all_tasks:
+            task_name = task["task_name"]
+            var = tk.BooleanVar(value=True) # Default to checked
+            self.task_vars[task_name] = var
+            ttk.Checkbutton(popup, text=task_name, variable=var).pack(anchor='w', padx=20)
+
+        # Run Analysis button in the popup
+        run_button = ttk.Button(
+            popup,
+            text="Run Analysis",
+            command=lambda: self.execute_analysis(popup, transcript_path, all_tasks)
+        )
+        run_button.pack(pady=15)
+
+    def execute_analysis(self, popup, transcript_path, all_tasks):
+        """Gathers selected tasks and runs the main analysis function."""
+        popup.destroy() # Close the checklist popup
+
+        # Figure out which tasks were selected by the user
+        selected_tasks = []
+        for task in all_tasks:
+            if self.task_vars[task["task_name"]].get():
+                selected_tasks.append(task)
+
+        if not selected_tasks:
+            messagebox.showinfo("No Tasks", "No tasks were selected. Nothing to do.")
+            return
+
+        # --- Create a simple log window ---
+        log_window = tk.Toplevel(self.root)
+        log_window.title("Processing Log")
+        log_window.geometry("600x400")
+        log_text = tk.Text(log_window, wrap='word', state='disabled')
+        log_text.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        def log_to_gui(message):
+            log_text.config(state='normal')
+            log_text.insert('end', message + '\n')
+            log_text.config(state='disabled')
+            log_text.see('end')
+            self.root.update_idletasks()
+
+        # Run the analysis
+        success = analyze_transcript(transcript_path, selected_tasks, self.master_prompt, log_to_gui)
+
+        # Move the file if successful
+        if success:
+            destination_path = RIPPED_DIR / transcript_path.name
+            counter = 1
+            while destination_path.exists():
+                destination_path = RIPPED_DIR / f"{transcript_path.stem}-{counter}{transcript_path.suffix}"
+                counter += 1
+            log_to_gui(f"\nMoving processed transcript to '{destination_path.name}'...")
+            shutil.move(transcript_path, destination_path)
+        
+        messagebox.showinfo("Complete", "Analysis run is complete. Check the Outputs folder and the log window for details.")
+        log_window.title("Processing Log (Complete)")
+
+
+# --- MAIN EXECUTION BLOCK ---
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ScriptRipperApp(root)
+    root.mainloop()
