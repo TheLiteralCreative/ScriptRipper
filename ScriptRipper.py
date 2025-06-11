@@ -1,53 +1,59 @@
 import google.generativeai as genai
 import os
-import shutil
 import pathlib
 import json
 from dotenv import load_dotenv
+import streamlit as st
 
-# --- GUI Library ---
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+# --- NEW LIBRARY FOR TEXT CHUNKING ---
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # --- 1. CONFIGURATION ---
 
-load_dotenv()
+# This function checks for Google Colab's secrets manager first, then a local .env file.
+def load_api_key():
+    try:
+        from google.colab import userdata
+        print("Loading API Key from Colab Secrets...")
+        return userdata.get('GOOGLE_API_KEY')
+    except (ImportError, KeyError):
+        print("Could not find Colab secrets. Falling back to local .env file.")
+        load_dotenv()
+        return os.environ.get("GOOGLE_API_KEY")
 
-try:
-    genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-except KeyError:
-    # This case is now handled at GUI startup
-    pass
+# Configure GenAI API
+api_key = load_api_key()
+if not api_key:
+    st.error("FATAL: GOOGLE_API_KEY not found. Please set it in Colab Secrets or a local .env file.")
+    st.stop()
+genai.configure(api_key=api_key)
+
 
 # --- PATH CONFIGURATION ---
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-SCRIPTS_DIR = BASE_DIR / "Scripts"
-RIPPED_DIR = BASE_DIR / "Ripped"
+# In Colab, we work relative to the content directory
+BASE_DIR = pathlib.Path("./").resolve()
 OUTPUTS_DIR = BASE_DIR / "Outputs"
 PROMPTS_DIR = BASE_DIR / "prompts"
-
-# --- Create necessary folders if they don't exist ---
-SCRIPTS_DIR.mkdir(exist_ok=True)
-RIPPED_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 PROMPTS_DIR.mkdir(exist_ok=True)
 
 
-# --- PROMPT LOADING LOGIC ---
-
+# --- DATA LOADING FUNCTIONS ---
+@st.cache_data
 def load_master_prompt():
     try:
         with open(PROMPTS_DIR / "master_prompt.md", 'r', encoding='utf-8') as f:
             return f.read()
     except FileNotFoundError:
-        messagebox.showerror("Error", f"FATAL: master_prompt.md not found in '{PROMPTS_DIR}'. Please create it.")
+        st.error(f"FATAL: master_prompt.md not found in '{PROMPTS_DIR}'. Please create it.")
         return None
 
+@st.cache_data
 def load_prompt_profiles():
     profiles = {}
     json_files = list(PROMPTS_DIR.glob("*_prompts.json"))
     if not json_files:
-        messagebox.showerror("Error", f"FATAL: No prompt profiles (*_prompts.json) found in '{PROMPTS_DIR}'.")
+        st.error(f"FATAL: No prompt profiles (*_prompts.json) found in '{PROMPTS_DIR}'.")
         return {}
     for prompt_file in json_files:
         profile_name = prompt_file.stem.replace('_prompts', '')
@@ -55,188 +61,91 @@ def load_prompt_profiles():
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 profiles[profile_name] = json.load(f)
         except Exception as e:
-            messagebox.showwarning("Warning", f"Could not load {prompt_file.name}: {e}. Skipping.")
+            st.warning(f"Could not load {prompt_file.name}: {e}. Skipping.")
     return profiles
 
 # --- ANALYSIS LOGIC ---
-
-def analyze_transcript(transcript_path: pathlib.Path, selected_tasks: list, master_prompt: str, log_callback, progress_callback):
-    """Analyzes a single transcript file, generates reports, and logs progress."""
-    log_callback("-" * 50)
-    log_callback(f"Processing transcript: {transcript_path.name}")
+def analyze_transcript(transcript_content: str, transcript_name: str, selected_tasks: list, master_prompt: str):
+    log_area = st.expander("Processing Log", expanded=True)
+    progress_bar = st.progress(0)
     
-    try:
-        with open(transcript_path, 'r', encoding='utf-8') as f:
-            transcript_content = f.read()
+    with log_area:
+        st.info(f"Processing transcript: {transcript_name}")
 
-        if not transcript_content.strip():
-            log_callback("Warning: Transcript file is empty. Skipping analysis.")
+        try:
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            request_options = {"timeout": 1200}
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=40000, chunk_overlap=2000)
+            chunks = text_splitter.split_text(transcript_content)
+            st.write(f"Transcript split into {len(chunks)} chunk(s).")
+
+            base_filename = pathlib.Path(transcript_name).stem
+            total_tasks = len(selected_tasks)
+
+            for i, task in enumerate(selected_tasks):
+                task_name = task["task_name"]
+                original_prompt = task["prompt"]
+                st.write("---")
+                st.subheader(f"Running Task {i+1}/{total_tasks}: '{task_name}'")
+                
+                intermediate_results = []
+                st.write(f"Analyzing {len(chunks)} chunks...")
+                for j, chunk in enumerate(chunks):
+                    chunk_prompt = f"You are analyzing one small chunk of a larger document. Perform the following instruction ONLY on the provided chunk.\n\nINSTRUCTION: \"{original_prompt}\"\n\n--- CHUNK OF TRANSCRIPT ---\n{chunk}"
+                    with st.spinner(f"Analyzing chunk {j+1}/{len(chunks)}..."):
+                        response = model.generate_content(chunk_prompt, request_options=request_options)
+                        intermediate_results.append(response.text)
+                    st.write(f"✓ Chunk {j+1}/{len(chunks)} complete.")
+
+                st.write("Synthesizing final report...")
+                synthesis_prompt = f"{master_prompt}\n\nYou have analyzed a document chunk by chunk. Below are the raw results. Synthesize them into a single, cohesive, de-duplicated final report that fulfills the original request.\n\nORIGINAL REQUEST: \"{original_prompt}\"\n\n--- RAW INTERMEDIATE RESULTS ---\n{''.join(intermediate_results)}"
+                
+                with st.spinner(f"Creating final report for '{task_name}'..."):
+                    final_response = model.generate_content(synthesis_prompt, request_options=request_options)
+
+                slug = task_name.lower().replace(' ', '-').replace('&', 'and').replace('/', '')
+                output_filename = f"{base_filename}_output_{slug}.md"
+                output_path = OUTPUTS_DIR / output_filename
+                
+                st.write(f"Saving final report to '{output_path}'...")
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(final_response.text)
+                st.success(f"Saved '{output_filename}'")
+                
+                progress_bar.progress((i + 1) / total_tasks)
+            
+            st.success("All tasks completed successfully.")
+            return True
+
+        except Exception as e:
+            st.error(f"An error occurred during analysis: {e}")
             return False
 
-        initial_message = master_prompt + "\n\n## MEETING TRANSCRIPT ##\n\n" + transcript_content
-        model = genai.GenerativeModel('gemini-1.5-pro-latest')
-        chat = model.start_chat()
+# --- STREAMLIT GUI ---
+st.set_page_config(layout="centered")
+st.title("📄 ScriptRipper AI")
+st.markdown("An advanced tool for deep analysis of meeting and presentation transcripts.")
 
-        log_callback("Sending transcript to Gemini... (This may take several minutes)")
-        request_options = {"timeout": 1800} # 30 minutes
+master_prompt = load_master_prompt()
+prompt_profiles = load_prompt_profiles()
 
-        response = chat.send_message(initial_message, request_options=request_options)
-        log_callback(f"Model Acknowledged: {response.text.strip()}")
-
-        base_filename = transcript_path.stem
-        total_tasks = len(selected_tasks)
-        for i, task in enumerate(selected_tasks):
-            task_name = task["task_name"]
-            prompt = task["prompt"]
-            log_callback(f"\nRequesting Analysis Task {i+1}/{total_tasks}: '{task_name}'...")
-            response = chat.send_message(prompt, request_options=request_options)
-            
-            slug = task_name.lower().replace(' ', '-').replace('&', 'and').replace('/', '')
-            output_filename = f"{base_filename}_output_{slug}.md"
-            output_path = OUTPUTS_DIR / output_filename
-            
-            log_callback(f"Saving analysis to '{output_path}'...")
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(response.text)
-            
-            progress_callback((i + 1) / total_tasks * 100)
-        
-        log_callback("\nAnalysis successful.")
-        return True
-
-    except Exception as e:
-        log_callback(f"!!-- An error occurred: {e} --!!")
-        messagebox.showerror("Analysis Error", str(e))
-        return False
-
-# --- GUI APPLICATION CLASS ---
-
-class ScriptRipperApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("ScriptRipper")
-        self.root.geometry("400x150")
-
-        self.master_prompt = load_master_prompt()
-        self.prompt_profiles = load_prompt_profiles()
-
-        if not self.master_prompt or not self.prompt_profiles:
-            self.root.destroy()
-            return
-            
-        main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.analyze_button = ttk.Button(
-            main_frame,
-            text="Select Transcript and Analyze",
-            command=self.run_analysis_workflow
-        )
-        self.analyze_button.pack(pady=20, expand=True)
-
-    def run_analysis_workflow(self):
-        filepath = filedialog.askopenfilename(
-            title="Select a Transcript File",
-            initialdir=SCRIPTS_DIR,
-            filetypes=(("Text files", "*.txt"), ("All files", "*.*"))
-        )
-        if not filepath:
-            return
-
-        transcript_path = pathlib.Path(filepath)
-        
-        try:
-            profile_name = transcript_path.relative_to(SCRIPTS_DIR).parts[0]
-        except ValueError:
-             profile_name = None
-
-        if profile_name not in self.prompt_profiles:
-            messagebox.showerror(
-                "Profile Error",
-                f"Unknown or invalid profile folder.\nPlease select a transcript from within a valid profile folder (e.g., 'meetings', 'presentations') inside your '{SCRIPTS_DIR.name}' directory."
-            )
-            return
-            
-        all_tasks = self.prompt_profiles[profile_name]
-        self.launch_task_selection_window(transcript_path, profile_name, all_tasks)
-
-    def launch_task_selection_window(self, transcript_path, profile_name, all_tasks):
-        popup = tk.Toplevel(self.root)
-        popup.title("Select Tasks to Run")
-        
-        ttk.Label(popup, text=f"Profile: '{profile_name}'", font=("Helvetica", 12, "bold")).pack(pady=10)
-        
-        self.task_vars = {}
-        for task in all_tasks:
-            task_name = task["task_name"]
-            var = tk.BooleanVar(value=True)
-            self.task_vars[task_name] = var
-            ttk.Checkbutton(popup, text=task_name, variable=var).pack(anchor='w', padx=20)
-            
-        run_button = ttk.Button(
-            popup,
-            text="Run Analysis",
-            command=lambda: self.execute_analysis(popup, transcript_path, all_tasks)
-        )
-        run_button.pack(pady=15)
-
-    def execute_analysis(self, popup, transcript_path, all_tasks):
-        popup.destroy()
-        selected_tasks = []
-        for task in all_tasks:
-            if self.task_vars[task["task_name"]].get():
-                selected_tasks.append(task)
-        if not selected_tasks:
-            messagebox.showinfo("No Tasks", "No tasks were selected. Nothing to do.")
-            return
-
-        log_window = tk.Toplevel(self.root)
-        log_window.title("Processing Log")
-        log_window.geometry("600x450")
-        
-        log_frame = ttk.Frame(log_window)
-        log_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-        log_text = tk.Text(log_frame, wrap='word', state='disabled', bg="black", fg="white", font=("Courier", 12))
-        log_text.pack(fill='both', expand=True)
-        
-        progress_var = tk.DoubleVar()
-        progressbar = ttk.Progressbar(log_frame, variable=progress_var, maximum=100)
-        progressbar.pack(fill='x', pady=(5, 0))
-
-        def log_to_gui(message):
-            log_text.config(state='normal')
-            log_text.insert('end', message + '\n')
-            log_text.config(state='disabled')
-            log_text.see('end')
-            self.root.update_idletasks()
-            
-        def progress_update_gui(value):
-            progress_var.set(value)
-            self.root.update_idletasks()
-
-        success = analyze_transcript(transcript_path, selected_tasks, self.master_prompt, log_to_gui, progress_update_gui)
-        
-        if success:
-            destination_path = RIPPED_DIR / transcript_path.name
-            counter = 1
-            while destination_path.exists():
-                destination_path = RIPPED_DIR / f"{transcript_path.stem}-{counter}{transcript_path.suffix}"
-                counter += 1
-            log_to_gui(f"\nMoving processed transcript to '{destination_path.name}'...")
-            shutil.move(transcript_path, destination_path)
-        
-        messagebox.showinfo("Complete", "Analysis run is complete. Check the Outputs folder and the log window for details.")
-        log_window.title("Processing Log (Complete)")
-
-
-# --- MAIN EXECUTION BLOCK ---
-if __name__ == "__main__":
-    if "GOOGLE_API_KEY" not in os.environ:
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showerror("Startup Error", "FATAL: GOOGLE_API_KEY not found in .env file.")
-    else:
-        root = tk.Tk()
-        app = ScriptRipperApp(root)
-        root.mainloop()
+if master_prompt and prompt_profiles:
+    uploaded_file = st.file_uploader("Upload a transcript file (.txt)", type=['txt'])
+    if uploaded_file is not None:
+        profile_options = list(prompt_profiles.keys())
+        selected_profile_name = st.selectbox("Select an Analysis Profile:", options=profile_options)
+        if selected_profile_name:
+            st.markdown("---")
+            tasks_for_profile = prompt_profiles[selected_profile_name]
+            task_names_for_profile = [task['task_name'] for task in tasks_for_profile]
+            selected_task_names = st.multiselect("Select Tasks to Run:", options=task_names_for_profile, default=task_names_for_profile)
+            st.markdown("---")
+            if st.button("🚀 Run Analysis", use_container_width=True):
+                if not selected_task_names:
+                    st.warning("Please select at least one task to run.")
+                else:
+                    tasks_to_run = [task for task in tasks_for_profile if task['task_name'] in selected_task_names]
+                    transcript_content = uploaded_file.getvalue().decode("utf-8")
+                    transcript_name = uploaded_file.name
+                    analyze_transcript(transcript_content, transcript_name, tasks_to_run, master_prompt)
+                    st.balloons()
