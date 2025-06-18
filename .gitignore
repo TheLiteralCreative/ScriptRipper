@@ -1,0 +1,17 @@
+# Python virtual environment
+venv/
+
+# Local environment variables and credentials
+.env
+prompts/credentials.json
+
+# Generated output folders
+Outputs/
+Ripped/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS system files
+.DS_Store
